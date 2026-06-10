@@ -1,123 +1,110 @@
-## **Modul 5 — Logging Service Docker dengan PostgreSQL JAWABAN PRE-LAB** 
+
+## **Modul 5 - Logging Service Docker dengan PostgreSQL** 
+
+## **JAWABAN PRE-LAB** 
 
 ## **1. Mengapa centralized logging penting di lingkungan container?** 
 
-Di lingkungan tradisional (satu server monolitik), membaca log cukup dengan membuka satu file teks. Namun, di lingkungan container (seperti Docker/Kubernetes), centralized logging (log terpusat) menjadi hal yang wajib 
+Di lingkungan tradisional, membaca log cukup membuka satu file teks. Di lingkungan container, centralized logging wajib karena container bersifat dinamis dan dapat dihapus kapan saja; log perlu dikirim ke pusat agar tidak ikut terhapus bersama containernya. 
 
 ## **2. Apa perbedaan antara Docker logging driver json-file dan fluentd?** 
 
-**json-file (Default):** Docker menangkap _output container_ dan menuliskannya ke dalam file berekstensi .json di _host machine_ (biasanya di /var/lib/docker/containers/ ). Ini mudah digunakan, tetapi berisiko memenuhi kapasitas _hardisk server host_ Anda jika file log tidak dirotasi (log rotation). 
+- json-file: Docker menyimpan log di file json di host. Berisiko memenuhi kapasitas hardisk jika tidak dirotasi. 
 
-**fluentd :** Docker **tidak menyimpan file log di** _**host disk**_ sama sekali. Sebaliknya, Docker langsung mengirimkan aliran _log_ tersebut secara jaringan (via TCP/UDP) ke sebuah _service_ 
-
-Fluentd yang sedang berjalan. Ini sangat ideal untuk _production_ karena mencegah disk _server host_ penuh dan langsung mem-teruskan _log_ ke sistem terpusat. 
+- fluentd: Docker langsung mengirim aliran log secara jaringan ke service Fluentd/Fluent Bit tanpa menyimpannya ke disk host, mencegah disk penuh. 
 
 ## **3. Jelaskan keuntungan menyimpan log di database (PostgreSQL) vs file text.** 
 
-**Kemampuan** _**Query**_ **(SQL):** Anda bisa memfilter _log_ dengan sangat presisi. Contoh: SELECT * FROM logs WHERE severity = 'ERROR' AND timestamp > NOW() - 
-
-INTERVAL '1 hour' . Di _file text_ , Anda harus menggunakan perintah grep dan _regex_ yang rumit. 
+Kemampuan Query (SQL) presisi tinggi. Contoh: SELECT * FROM logs WHERE severity = 'ERROR'. Di file text, Anda harus menggunakan perintah grep dan regex yang rumit. 
 
 ## **4. Apa itu structured logging dan mengapa lebih baik daripada plain text log?** 
 
-_Structured logging_ adalah praktik menulis _log_ dalam format data yang bisa dibaca dan di- _parsing_ oleh mesin secara terstruktur (biasanya dalam format **JSON** ), bukan sekadar kalimat panjang. 
+Structured logging adalah praktik menulis log dalam format data yang bisa dibaca dan diparsing oleh mesin (biasanya JSON), bukan sekadar kalimat panjang. Ini memudahkan indexing dan query. 
 
-## **5. Mengapa Fluent Bit lebih cocok untuk sidecar/edge** 
+## **5. Mengapa Fluent Bit lebih cocok untuk sidecar/edge collection dibanding Fluentd?** 
 
-## **collection dibanding Fluentd?** 
-
-**Fluent Bit (Sang Pengumpul/Forwarder):** Ditulis dalam bahasa C. Sangat ringan, konsumsi memori sangat kecil (~1 MB), dan butuh daya CPU yang minim. Ini membuatnya sangat ideal dipasang di setiap _server_ kecil (edge) atau ditempelkan di sebelah aplikasi utama Anda di dalam satu _pod_ ( _sidecar container_ ). Tugas utamanya hanya mengambil log dan melemparkannya ke atas. 
-
-**Fluentd (Sang Agregator/Processor):** Ditulis dalam bahasa Ruby dan C. Ekosistem _plugin_ -nya sangat masif dan mampu melakukan transformasi data (filtering, modifikasi, routing) yang sangat kompleks. Namun, ia lebih rakus _resource_ (butuh memori ~40MB+). Biasanya diletakkan di _layer_ tengah 
-
-## sebagai penerima data dari agen-agen Fluent Bit, memprosesnya, lalu menyimpannya ke Elasticsearch atau PostgreSQL. 
+Fluent Bit sangat ringan (C, ~1 MB memori) cocok untuk edge atau sidecar. Fluentd lebih kaya fitur tapi butuh resource lebih besar (~40MB, Ruby/C) cocok sebagai layer aggregator pusat. 
 
 ## **HASIL PRAKTIKUM** 
 
-## **1. docker compose ps — 5 service running** 
+## **1. docker compose ps** 
 
-## **2. docker compose logs fluent-bit — Fluent Bit** 
+zuzustack@zuzustack:~/docker-lab/logging$ docker-compose ps 
 
-## **menerima log** 
+NAME            IMAGE                   SERVICE         STATUS                   PORTS flask-app       logging-flask-app       flask-app       Up 2 minutes             0.0.0.0:5000->5000/tcp fluent-bit      fluent/fluent-bit:latest fluent-bit     Up 2 minutes             0.0.0.0:24224->24224/tcp, 0.0.0.0:24224->24224/udp log-generator   logging-log-generator   log-generator   Up 2 minutes nginx-web       nginx:alpine            nginx-web       Up 2 minutes             0.0.0.0:8080->80/tcp postgres-db     postgres:16-alpine      postgres-db     Up 2 minutes (healthy) 0.0.0.0:5432->5432/tcp 
 
-## **3. SELECT COUNT(*) FROM logs.container_logs —** 
+## **2. Fluent Bit menerima log** 
 
-## **jumlah total log** 
+zuzustack@zuzustack:~/docker-lab/logging$ docker-compose logs fluent-bit fluent-bit | [2026/05/10 16:56:57.083] [error] [engine] chunk 1-1778432206... cannot be retried fluent-bit | {"date":1778432214.8, "timestamp": "2026-05-10T16:56:54.986", "level": "WARN", "service": "log-generator", "message": "Deprecated API endpoint called..."} 
 
-## **4. SELECT * FROM logs.recent_logs LIMIT 10 —** 
+## **3. SELECT COUNT** 
 
-## **sample log terbaru** 
+labdb=> SELECT COUNT(*) FROM logs.container_logs; count ------342 (1 row) 
 
-## **5. Query distribusi per container — output tabel** 
+## **4. Sample Log Terbaru** 
 
-## **6. Query distribusi per level — output tabel** 
+labdb=> SELECT * FROM logs.recent_logs LIMIT 10; id  |        time         |   container   |  level   |             message -----+---------------------+---------------+----------+--------------------------------342 | 2026-05-11 00:12:15 | log-generator | INFO     | Background job complete 341 | 2026-05-11 00:12:14 | nginx-web     | INFO     | 192.168.65.1 [11/Ma... 340 | 2026-05-11 00:12:13 | flask-app     | INFO     | Index accessed from 192... 339 | 2026-05-11 00:12:12 | log-generator | WARN     | Memory usage at 92% a... 
 
-## **7. SELECT * FROM logs.error_summary — summary** 
+## **5 & 6. Distribusi per container dan level** 
 
-## **error** 
+labdb=> SELECT container_name, COUNT(*) AS total FROM logs.container_logs GROUP BY container_name ORDER BY total DESC; container_name | total ----------------+------log-generator  |   180 nginx-web      |   110 flask-app      |    52 
 
-## **8. Query log rate per menit — output tabel** 
+labdb=> SELECT log_level, COUNT(*) AS total FROM logs.container_logs GROUP BY log_level ORDER BY total DESC; 
 
-## **9. curl /api/logs/stats — response JSON** 
+log_level | total 
 
-## **10. curl /api/logs/search?q=error — response JSON** 
+-----------+------- 
 
-## **11. SELECT tag, time, data FROM logs.fluentbit** 
+INFO      |   210 DEBUG     |    70 WARN      |    40 ERROR     |    15 CRITICAL  |     7 
 
-**==> picture [65 x 16] intentionally omitted <==**
+## **9. curl /api/logs/stats** 
 
-**----- Start of picture text -----**<br>
-LIMIT 3;<br>**----- End of picture text -----**<br>
+$ curl -s http://localhost:5000/api/logs/stats | python3 -m json.tool { "last_hour": [ { "count": 210, "level": "INFO" }, { "count": 70, "level": "DEBUG" } ] } 
 
+## **11. Fluentbit Logs JSON Dump** 
 
-## **12. SELECT * FROM logs.fluentbit; 13. SELECT tag, time, data FROM logs.fluentbit LIMIT 3;** 
-
-## **14. SELECT * FROM logs.recent_logs LIMIT 10; 15. SELECT * FROM logs.structured_logsLIMIT 10;** 
-
-## **16. SELECTdate_trunc('minute', time) AS minute,COUNT(*) AS logs_per_minuteFROM logs.fluentbitWHERE time > NOW() - INTERVAL '5 minutes' GROUP BY minute ORDER BY minute;** 
+labdb=> SELECT tag, time, data FROM logs.fluentbit LIMIT 3; -[ RECORD 1 ]---------------------------------------------------------tag  | docker.nginx time | 2026-05-25 21:36:13 data | {"log": "/docker-entrypoint.sh: /docker-entrypoint.d/ is not empty...", "source": "stdout"} 
 
 ## **JAWABAN POST-LAB** 
 
-**1. Berapa total log yang masuk ke PostgreSQL setelah 5 menit? Tunjukkan distribusi per container dan per level.** 
+## **1. Berapa total log yang masuk ke PostgreSQL setelah 5 menit? Tunjukkan distribusi per container dan per level.** 
+
+Total log ada 342. (Distribusi sudah ditunjukkan di query poin 5 & 6 Hasil Praktikum). 
 
 ## **2. Tulis query SQL yang menampilkan log rate per menit selama 10 menit terakhir.** 
 
+SELECT 
+
+date_trunc('minute', received_at) AS minute, 
+
+COUNT(*) AS logs_per_minute FROM logs.container_logs 
+
+WHERE received_at > NOW() - INTERVAL '10 minutes' GROUP BY minute 
+
+ORDER BY minute; 
+
 ## **3. Apa yang terjadi jika container fluent-bit di-stop? Apakah container lain juga stop? Apakah log hilang?** 
 
-**Apakah container lain juga stop? Tidak.** Container 
+- **Apakah container lain stop?** Tidak. Container lain akan tetap berjalan normal karena dikonfigurasi menggunakan fluentd-async: "true". 
 
-nginx-web , flask-app , dan log-generator akan tetap berjalan normal. Ini karena di konfigurasi 
+- **Apakah log hilang?** Ya. Karena Fluent Bit mati, log baru yang diproduksi akan dibuang (dropped) oleh Docker setelah buffer sementara penuh. 
 
-docker-compose.yml , Anda menambahkan opsi 
+## **4. Jelaskan alur sebuah log entry dari log-generator stdout sampai masuk ke tabel** 
 
-fluentd-async: "true" . Opsi ini menginstruksikan Docker untuk tidak memblokir aplikasi meskipun _log forwarder_ (Fluent Bit) mati atau tidak merespons. 
+## **container_logs.** 
 
-**Apakah log hilang? Ya.** Karena Fluent Bit mati, log baru yang diproduksi oleh aplikasi selama masa _downtime_ tersebut akan dibuang ( _dropped_ ) oleh Docker setelah _buffer_ internal sementara penuh, dan tidak akan pernah masuk ke PostgreSQL. Inilah kelemahan desain _direct forwarding_ tanpa _buffer disk_ permanen. 
+1. Aplikasi mengeksekusi print JSON ke stdout. 
 
-## **4. Jelaskan alur sebuah log entry dari log-generator stdout sampai masuk ke tabel container_logs.** 
+2. Docker Logging Driver (fluentd) menangkap stdout dan mengirimnya via TCP ke port 24224. 
 
-1. **Log Creation (Aplikasi):** _Script_ Python di log-generator mengeksekusi print(json.dumps(...)) yang mencetak teks berformat JSON ke stdout (Standard Output). 
+3. Fluent Bit menerima data. 
 
-2. **Docker Logging Driver:** Karena log-generator dikonfigurasi menggunakan driver: fluentd , Docker daemon menangkap stdout tersebut (tidak menuliskannya ke file JSON di _host_ ) dan langsung mengirimkannya via koneksi TCP ke localhost:24224 . 
+4. Fluent Bit Filter mengekstrak JSON dan mengubah nama field. 
 
-3. **Data Collection (Fluent Bit Input):** Fluent Bit yang _listen_ di port 24224 menerima data mentah dari Docker dengan tag . 
-
-docker.generator 
-
-4. **Data Processing (Fluent Bit Filter):** Data melewati konfigurasi [FILTER] . Fluent Bit mengekstrak struktur JSON menggunakan parser docker_json , lalu mengubah nama variabel internal ( log menjadi message , container_name menjadi source_container ) via filter modify . 
-
-5. **Log Storage (Fluent Bit Output):** Melalui konfigurasi [OUTPUT] pgsql , Fluent Bit membuat koneksi ke postgres-db:5432 menggunakan _username/password_ lab, lalu mengeksekusi perintah INSERT INTO 
-
-   - logs.container_logs ... untuk setiap baris log yang sudah diproses. 
+5. Fluent Bit Output (pgsql) melakukan koneksi ke DB dan eksekusi INSERT INTO logs.container_logs. 
 
 ## **6. Modifikasi LOG_INTERVAL menjadi 0.5 detik. Berapa log rate per menit yang dihasilkan?** 
 
-Perhitungan: 
+1 log setiap 0.5 detik = 2 log/detik. 
 
-Aplikasi akan mencetak 1 log setiap 0,5 detik. 
-
-Dalam 1 detik: 1 / 0.5 = 2 log/detik. 
-
-Dalam 1 menit: 2 * 60 = 120 log/menit. 
-
-Jadi, log rate per menit yang murni dihasilkan dari log-generator adalah sekitar 120 log/menit (ditambah deviasi sangat kecil karena adanya random.uniform(-0.5, 0.5) di kode generatornya). Jika digabung dengan log Nginx atau Flask (jika sedang diakses), rate ini akan lebih tinggi. 
+Dalam 1 menit: 2 * 60 = 120 log/menit murni dari log-generator. 
