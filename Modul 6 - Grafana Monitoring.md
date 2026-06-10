@@ -49,14 +49,6 @@ Prometheus targets diuji melalui browser di http://localhost:9090/targets. Semua
 
 thinkpad_L15@DESKTOP:~/docker-lab/monitoring$ curl -s http://localhost:5000/metrics | head -40 
 
-# HELP python_gc_objects_collected_total Objects collected during gc # TYPE python_gc_objects_collected_total counter python_gc_objects_collected_total{generation="0"} 386.0 
-
-... 
-
-# HELP process_resident_memory_bytes Resident memory size in bytes. 
-
-# TYPE process_resident_memory_bytes gauge process_resident_memory_bytes 4.3114496e+07 
-
 ## **5 & 6. Verifikasi Login Grafana & Data Sources** 
 
 Login Grafana di http://localhost:3001 berhasil. Pada menu Data Sources, koneksi ke 
